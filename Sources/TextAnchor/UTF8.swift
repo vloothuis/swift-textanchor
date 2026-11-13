@@ -109,39 +109,69 @@ func isBlank(_ s: [UInt8], _ start: Int, _ end: Int) -> Bool {
     return a >= b
 }
 
-/// Go's `strings.Index` from `from`: the first offset of `needle` in `hay`.
-func firstIndex(of needle: [UInt8], in hay: [UInt8], from: Int = 0) -> Int? {
-    let n = needle.count
-    if n == 0 { return from <= hay.count ? from : nil }
-    if n > hay.count - from { return nil }
-    let first = needle[0]
-    return hay.withUnsafeBufferPointer { h in
-        needle.withUnsafeBufferPointer { q in
-            var i = from
-            let last = h.count - n
-            while i <= last {
-                if h[i] == first {
-                    var k = 1
-                    while k < n && h[i + k] == q[k] { k += 1 }
-                    if k == n { return i }
-                }
-                i += 1
-            }
-            return nil
-        }
-    }
+/// The first occurrence of `needle` in `hay` at or after `from`, as Go's
+/// `strings.Index`. It runs in linear time, whatever the input.
+package func firstIndex(of needle: [UInt8], in hay: [UInt8], from: Int = 0) -> Int? {
+    if needle.isEmpty { return from >= 0 && from <= hay.count ? from : nil }
+    var found: Int?
+    ByteSearch(needle).scan(hay, from: from) { i in found = i; return false }
+    return found
+}
+
+/// Every occurrence of `needle` in `hay`, overlapping ones included, in one
+/// linear pass. `needle` must not be empty.
+package func allIndices(of needle: [UInt8], in hay: [UInt8]) -> [Int] {
+    var out: [Int] = []
+    ByteSearch(needle).scan(hay, from: 0) { i in out.append(i); return true }
+    return out
 }
 
 /// Go's `strings.Count`: the number of non-overlapping occurrences.
 func countOccurrences(of needle: [UInt8], in hay: [UInt8]) -> Int {
     guard !needle.isEmpty else { return runes(hay).count + 1 }
     var count = 0
-    var from = 0
-    while let i = firstIndex(of: needle, in: hay, from: from) {
-        count += 1
-        from = i + needle.count
+    var next = 0
+    ByteSearch(needle).scan(hay, from: 0) { i in
+        if i >= next { count += 1; next = i + needle.count }
+        return true
     }
     return count
+}
+
+/// Knuth-Morris-Pratt search: linear in the text and the pattern.
+struct ByteSearch {
+    let needle: [UInt8]
+    /// For each prefix of the needle, the length of its longest proper
+    /// border: a prefix that is also a suffix.
+    let border: [Int]
+
+    init(_ needle: [UInt8]) {
+        self.needle = needle
+        var b = [Int](repeating: 0, count: needle.count)
+        var k = 0
+        for i in needle.indices.dropFirst() {
+            while k > 0 && needle[i] != needle[k] { k = b[k - 1] }
+            if needle[i] == needle[k] { k += 1 }
+            b[i] = k
+        }
+        border = b
+    }
+
+    /// Calls `found` with the start of each match at or after `from`, in
+    /// order, until it returns false.
+    func scan(_ hay: [UInt8], from: Int, _ found: (Int) -> Bool) {
+        let n = needle.count
+        guard n > 0, from >= 0, from <= hay.count else { return }
+        var k = 0
+        for i in from..<hay.count {
+            while k > 0 && hay[i] != needle[k] { k = border[k - 1] }
+            if hay[i] == needle[k] { k += 1 }
+            if k == n {
+                if !found(i - n + 1) { return }
+                k = border[k - 1]
+            }
+        }
+    }
 }
 
 /// Splits `s` at every "\n", as Go's `strings.Split(s, "\n")`, returning the

@@ -166,12 +166,16 @@ A few results differ on purpose:
   character. This package cuts at the character boundary before it.
 - An offset that splits a character throws an error. The Go library accepts it.
 - A `QuoteMatch` is widened to whole characters.
+- `QuoteFinder` uses at most 64 bytes of the prefix and of the suffix: the
+  bytes next to the quote. This bounds the work for each match. The Go
+  library uses all of it.
 - The Go library parses Markdown with goldmark. This package uses cmark-gfm,
   through swift-markdown. They differ in a few rare cases, such as an escaped
   `|` in a table cell.
 
-This package is also faster when it compares a short quote with many windows.
-It skips windows that cannot win, without changing the result.
+This package also guards against slow inputs. Its text search takes linear
+time on any input. When it compares a short quote with many windows, it skips
+windows that cannot win, without changing the result.
 
 ## Licence
 

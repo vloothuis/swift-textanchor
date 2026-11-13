@@ -127,10 +127,8 @@ public final class AnchorDocument: Sendable {
         let quote = collapseWhitespace(anchor.quote).text
         if quote.isEmpty { return [] }
         var candidates: [Candidate] = []
-        var from = 0
-        while let start = firstIndex(of: quote, in: collapsed.text, from: from) {
+        for start in allIndices(of: quote, in: collapsed.text) {
             candidates.append(Candidate(range: collapsed.sourceRange(start, start + quote.count), score: 1))
-            from = start + 1
         }
         if !candidates.isEmpty { return candidates }
 

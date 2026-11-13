@@ -9,6 +9,9 @@ import TextAnchor
 /// rendered text and maps the match back to the source, ready for
 /// `Anchor(document:utf8Range:)`.
 public enum QuoteFinder {
+    /// The most bytes of the prefix and of the suffix used to pick a match.
+    static let maxContext = 64
+
     /// The span of `quote` in `markdown`, or nil when it is not there.
     public static func find(_ quote: String, in markdown: String) -> QuoteMatch? {
         find(quote, in: markdown, prefix: "", suffix: "")
@@ -37,15 +40,14 @@ public enum QuoteFinder {
         let text = rendered.bytes
         let posMap = rendered.sourceOffsets
         let nq = collapseAllWhitespace(quote)
-        let np = collapseAllWhitespace(prefix)
-        let ns = collapseAllWhitespace(suffix)
+        // Only the context next to the quote is scored, which bounds the work
+        // per match. The Go library scores all of it.
+        let np = Array(collapseAllWhitespace(prefix).suffix(maxContext))
+        let ns = Array(collapseAllWhitespace(suffix).prefix(maxContext))
         if nq.isEmpty { return nil }
 
-        var matches: [(idx: Int, score: Double)] = []
-        var offset = 0
-        while let idx = firstIndex(of: nq, in: text, from: offset) {
-            matches.append((idx, scoreMatchByContext(text, idx, nq.count, np, ns)))
-            offset = idx + 1
+        let matches = allIndices(of: nq, in: text).map { idx in
+            (idx: idx, score: scoreMatchByContext(text, idx, nq.count, np, ns))
         }
 
         if matches.isEmpty {
@@ -130,20 +132,20 @@ func contextSimilarity(_ actual: [UInt8], _ expected: [UInt8]) -> Double {
 func longestCommonSubstring(_ s1: [UInt8], _ s2: [UInt8]) -> Int {
     if s1.isEmpty || s2.isEmpty { return 0 }
     var best = 0
-    var prev = [Int](repeating: 0, count: s2.count + 1)
-    var cur = prev
-    for i in 1...s1.count {
-        for j in 1...s2.count {
-            if s1[i - 1] == s2[j - 1] {
-                cur[j] = prev[j - 1] + 1
-                best = max(best, cur[j])
-            } else {
-                cur[j] = 0
+    let m = s2.count
+    return withUnsafeTemporaryAllocation(of: Int.self, capacity: 2 * (m + 1)) { buf in
+        buf.initialize(repeating: 0)
+        var prev = 0, cur = m + 1
+        for c1 in s1 {
+            for j in 1...m {
+                let v = c1 == s2[j - 1] ? buf[prev + j - 1] + 1 : 0
+                buf[cur + j] = v
+                if v > best { best = v }
             }
+            swap(&prev, &cur)
         }
-        swap(&prev, &cur)
+        return best
     }
-    return best
 }
 
 /// Go's `strings.Join(strings.Fields(s), " ")`: runs of whitespace become
@@ -191,24 +193,6 @@ func mapToSource(_ posMap: [Int], _ pos: Int) -> Int {
     if pos < 0 { return 0 }
     if pos >= posMap.count { return posMap.last ?? 0 }
     return posMap[pos]
-}
-
-/// Go's `strings.Index` over bytes.
-func firstIndex(of needle: [UInt8], in hay: [UInt8], from: Int = 0) -> Int? {
-    let n = needle.count
-    if n == 0 { return from <= hay.count ? from : nil }
-    if from < 0 || n > hay.count - from { return nil }
-    var i = from
-    let last = hay.count - n
-    while i <= last {
-        if hay[i] == needle[0] {
-            var k = 1
-            while k < n && hay[i + k] == needle[k] { k += 1 }
-            if k == n { return i }
-        }
-        i += 1
-    }
-    return nil
 }
 
 /// Decodes one rune as Go does: an invalid byte is U+FFFD of size 1.

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TextAnchor
 
@@ -63,5 +64,33 @@ import Testing
                 }
             }
         }
+    }
+}
+
+@Suite struct ByteSearchTests {
+    @Test(arguments: [
+        ("abc", "xxabcabc", [2, 5]),
+        ("aa", "aaaa", [0, 1, 2]),
+        ("abab", "abababab", [0, 2, 4]),
+        ("x", "abc", []),
+        ("abcd", "abc", []),
+    ])
+    func allMatches(_ needle: String, _ hay: String, _ want: [Int]) {
+        #expect(allIndices(of: Array(needle.utf8), in: Array(hay.utf8)) == want)
+        #expect(firstIndex(of: Array(needle.utf8), in: Array(hay.utf8)) == want.first)
+        #expect(firstIndex(of: Array(needle.utf8), in: Array(hay.utf8), from: 1) == want.first { $0 >= 1 })
+    }
+
+    @Test func countIsNonOverlapping() {
+        #expect(countOccurrences(of: Array("aa".utf8), in: Array("aaaaa".utf8)) == 2)
+    }
+
+    /// A naive search takes quadratic time on this input.
+    @Test func linearOnRepetitiveInput() {
+        let hay = [UInt8](repeating: UInt8(ascii: "a"), count: 1_000_000)
+        let needle = [UInt8](repeating: UInt8(ascii: "a"), count: 50_000) + [UInt8(ascii: "b")]
+        let clock = ContinuousClock()
+        let elapsed = clock.measure { #expect(firstIndex(of: needle, in: hay) == nil) }
+        #expect(elapsed < .seconds(2))
     }
 }

@@ -1,5 +1,6 @@
 import Testing
 @testable import QuoteFind
+import TextAnchor
 
 func bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
 func sub(_ s: String, _ r: Range<Int>) -> String { String(decoding: bytes(s)[r], as: UTF8.self) }
@@ -212,3 +213,22 @@ func normalized(_ s: String) -> String {
         #expect(SegmentedDocument(doc).segments(r).map { String(doc[$0]) } == ["Überschrift", "Äpfel und"])
     }
 }
+
+@Suite struct QuoteFindLimitTests {
+    /// Many matches with a long context must not take quadratic time each.
+    @Test func longContextManyMatches() {
+        let doc = String(repeating: "word ", count: 5_000)
+        let context = String(repeating: "x", count: 100_000)
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            #expect(QuoteFinder.find("word", in: doc, prefix: context, suffix: context) != nil)
+        }
+        #expect(elapsed < .seconds(isReleaseBuild ? 2 : 60))
+    }
+}
+
+#if DEBUG
+let isReleaseBuild = false
+#else
+let isReleaseBuild = true
+#endif
